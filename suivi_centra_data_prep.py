@@ -7,7 +7,7 @@ from datetime import timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 
-import traceback # permet d'afficher les messages d'erreur du try except
+#import traceback # permet d'afficher les messages d'erreur du try except
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -34,7 +34,9 @@ param = pd.read_excel(r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Su
 save_folder = r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Supply Chain\data_prep\SuiviCentra"
 
 
-## fonctions ##
+# ## fonctions ##################################################################
+
+
 def get_deblocage(marque, saison, prix_achat):
     data = param[(param["Marque"] == marque) & (param["Saison"] == saison)].reset_index(drop=True)
     deblocage_folder = data["DossierSuiviDesDeblocages"].iloc[0]
@@ -60,21 +62,12 @@ def get_deblocage(marque, saison, prix_achat):
         df["MontantDeblocage"] = df["QuantiteDeblocagePiece"] * df["PrixAchatPiece"]
         
     #else:
-    except Exception as e:
+    except Exception:
         df = pd.DataFrame()
         print("Nom de dossier, fichier et/ou onglet manquant.")
             
     return df
 
-
-def deblocage_cum_sum(deblocage):
-    
-    if not deblocage.empty :
-        deblocage = deblocage.groupby("DateDeblocage")[["QuantiteDeblocagePiece","MontantDeblocage"]].sum().reset_index()
-        deblocage["QuantiteDeblocagePiece_cum"] = deblocage["QuantiteDeblocagePiece"].cumsum()
-        deblocage["MontantDeblocage_cum"] = deblocage["MontantDeblocage"].cumsum()
-    
-    return deblocage
 
 
 def get_annulations(marque, saison, prix_achat):
@@ -99,6 +92,7 @@ def get_annulations(marque, saison, prix_achat):
         print(e)
     
     return df
+
 
 def int_to_sql(liste_int):
 
@@ -136,11 +130,6 @@ def get_idcmd_achat(achat):
     return achat["IDCommandeAchat"].unique()
 
 
-def get_idcmd_achat_id_catalogue(achat):
-
-    return achat[["IDCommandeAchat", "IDCatalogue"]].drop_duplicates()
-
-
 def get_reception(liste_idcmd_achat_sql):
 
     q = f"""  
@@ -171,17 +160,6 @@ def get_reception(liste_idcmd_achat_sql):
     return df
 
 
-def recep_cum_sum(recep):
-    
-    if not recep.empty:
-        # grouper par date de réception
-        recep = recep.groupby("DateReception")[["QuantiteReceptionPiece", "MontantReception"]].sum().reset_index()
-        # calcul des cumul
-
-        recep["QuantiteReceptionPiece_cum"] = recep["QuantiteReceptionPiece"].cumsum()
-        recep["MontantReception_cum"] = recep["MontantReception"].cumsum()
-
-    return recep
 
 def ref_four_couleur():
     q = """
@@ -315,36 +293,6 @@ def get_expedition(liste_idcmd_vente_sql):
         
     return df
 
-def expe_cum_sum(expedition):
-    
-    if not expedition.empty:
-
-        # grouper par date de réception
-        expedition = expedition.groupby("DateExpedition")[["QuantiteExpeditionPiece", "MontantExpedition"]].sum().reset_index()
-        # calcul des cumul
-
-        expedition["QuantiteExpeditionPiece_cum"] = expedition["QuantiteExpeditionPiece"].cumsum()
-        expedition["MontantExpedition_cum"] = expedition["MontantExpedition"].cumsum()
-
-    return expedition
-
-
-def calcul_cumsum(df):
-    # colonne non date
-    other_col = [col for col in df.columns if not col.startswith("Date")]
-    for col in other_col:
-        new_col = col + "_cum"
-        df[new_col] = df[col].cumsum()
-
-    return df
-
-
-def calcul_pct(df, col_num, denom, new_col_name):
-
-    if not df.empty:
-        df[new_col_name] = round(df[col_num] / denom, 4)
-
-    return df
 
 
 def calcul_pct_df(df, denom_qte, denom_valo):
@@ -353,10 +301,10 @@ def calcul_pct_df(df, denom_qte, denom_valo):
         # colonnes quantité cumulé à utiliser
         for col in [col for col in df.columns if col.startswith("Quantite")]:
             new_col = "pct_" + col
-            df[new_col] = round(df[col] / denom_qte, 3)
+            df[new_col] = df[col] / denom_qte
         for col in [col for col in df.columns if col.startswith("Montant")]:
             new_col = "pct_" + col
-            df[new_col] = round(df[col] / denom_valo, 3)
+            df[new_col] = df[col] / denom_valo
 
     return df
 
@@ -370,14 +318,13 @@ def calcul_pct_cum_df(df, denom_qte, denom_valo):
                 if col.startswith("Quantite") and col.endswith("_cum")
         ]:
             new_col = "pct_" + col
-            df[new_col] = round(df[col] / denom_qte, 3)
+            df[new_col] = df[col] / denom_qte
         for col in [
                 col for col in df.columns
                 if col.startswith("Montant") and col.endswith("_cum")
         ]:
             new_col = "pct_" + col
-            df[new_col] = round(df[col] / denom_valo, 3)
-
+            df[new_col] = df[col] / denom_valo
     return df
 
 
@@ -454,186 +401,6 @@ def add_idcatalogue(reception, achat, expedition, vente):
     return reception, expedition
 
 
-def aggregate_by_date(deblocage, reception, expedition):
-    # grouper par date :
-    if not deblocage.empty:
-        # grouper par date de réception
-        deblocage = deblocage.groupby("DateDeblocage")[[
-            "QuantiteDeblocagePiece", "MontantDeblocage"
-        ]].sum().reset_index()
-    if not reception.empty:
-        # grouper par date de réception
-        reception = reception.groupby("DateReception")[[
-            "QuantiteReceptionPiece", "MontantReception"
-        ]].sum().reset_index()
-    if not expedition.empty:
-        # grouper par date de réception
-        expedition = expedition.groupby("DateExpedition")[[
-            "QuantiteExpeditionPiece", "MontantExpedition"
-        ]].sum().reset_index()
-
-    return deblocage, reception, expedition
-
-
-def merge_df(deblocage_grouped, reception_grouped, expedition_grouped):
-    """
-    renvoi les données des déblocages, expédition et / ou réception compilées
-    """
-    # savoir quels sont les df non vides
-    not_empty_df = [
-        df
-        for df in [deblocage_grouped, reception_grouped, expedition_grouped]
-        if not df.empty
-    ]
-
-    if len(not_empty_df) == 1:
-        df = not_empty_df[0]
-    elif len(not_empty_df) == 2:
-        # merge des 2 df sur les colonnes de date
-        df1 = not_empty_df[0]
-        df2 = not_empty_df[1]
-        col_date1 = [col for col in df1 if col.startswith("Date")][0]
-        col_date2 = [col for col in df2 if col.startswith("Date")][0]
-        df = pd.merge(df1,
-                      df2,
-                      left_on=col_date1,
-                      right_on=col_date2,
-                      how="outer")
-    elif len(not_empty_df) == 3:  # 3 dataframes à fusionner
-        df1 = not_empty_df[0]
-        df2 = not_empty_df[1]
-        df3 = not_empty_df[2]
-        col_date1 = [col for col in df1 if col.startswith("Date")][0]
-        col_date2 = [col for col in df2 if col.startswith("Date")][0]
-        col_date3 = [col for col in df3 if col.startswith("Date")][0]
-        df = pd.merge(df1,
-                      df2,
-                      left_on=col_date1,
-                      right_on=col_date2,
-                      how="outer")
-        # colonne de date intermédiaire, utilisée pour le 2ème merge
-        df["Date_int"] = df[[col_date1,
-                             col_date2]].bfill(axis=1).ffill(axis=1).iloc[:, 0]
-        df = pd.merge(df,
-                      df3,
-                      left_on="Date_int",
-                      right_on=col_date3,
-                      how="outer")
-        df = df.drop(columns="Date_int")
-    
-    else:
-        df = pd.DataFrame()
-
-    return df
-
-
-def sum_by_date(df):
-    """
-    renvoi un tableau des données de déblocage, réception, expédition en date
-    """
-    if not df.empty:
-        # grouper par date
-        # Colonne unique de date
-        # on n'a pas forcément les 3 colonnes de date, on peut en avoir que 2 (si c'est une centra sans déblocage)
-        # identifier les colonnes de date par leur nom
-        colonnes_dates = [col for col in df.columns if col.startswith("Date")]
-
-        # on rempli horizontalement (axis=1) avec la première date non vide (vers la gauche puis vers la droite)
-        # puis on prend la 1ère colonne
-        df["Date"] = df[colonnes_dates].bfill(axis=1).ffill(axis=1).iloc[:, 0]
-
-        # grouper par Date
-        other_col = [col for col in df.columns if not col.startswith("Date")]
-        df1 = df.groupby("Date")[other_col].sum().reset_index()
-
-        # calculer les cumsum
-        df1 = calcul_cumsum(df1)
-    else:
-        df1 = pd.DataFrame()
-
-    return df1
-
-
-def sum_by_date_deblocage(df):
-    """
-    renvoi un tableau des données de déblocage, réception, expédition en date de déblocage
-    """
-    # quand il y a des NaN dans les dates de déblocages (=> il y a des réceptions ou expé mais pas de déblocage)
-    # alors on rempli les NaN avec la prochaine date de déblocage
-    # pour les réceptions/expéditions de fin de saison, il n'y a pas de déblocage à venir (car les déblocages sont finis)
-    # donc on met la date max entre la réception et l'expédition
-    if not df.empty:
-        # identifier les colonnes de date
-        col_date = [col for col in df.columns if col.startswith("Date")]
-
-        if "DateDeblocage" in df.columns:
-            if len(col_date) == 4:
-                max_dt = max(
-                    df[df["DateExpedition"].notna()]["DateExpedition"].max(),
-                    df[df["DateReception"].notna()]["DateReception"].max())
-            elif len(col_date) == 3:
-                if "DateExpedition" in col_date:
-                    max_dt = df[
-                        df["DateExpedition"].notna()]["DateExpedition"].max()
-                elif "DateReception" in col_date:
-                    max_dt = df[df["DateReception"].notna()]["DateReception"].max()
-                else:
-                    max_dt = df[df["DateDeblocage"].notna()]["DateDeblocage"].max()
-            else:
-                max_dt = df[df["DateDeblocage"].notna()]["DateDeblocage"].max()
-
-            df["DateDeblocage"] = df["DateDeblocage"].bfill()
-            df["DateDeblocage"] = df["DateDeblocage"].fillna(max_dt)
-
-            col_non_date = [
-                col for col in df.columns if not col.startswith("Date")
-            ]
-
-            df1 = df.groupby("DateDeblocage")[col_non_date].sum().reset_index()
-            # calculer les cumsum
-            df1 = calcul_cumsum(df1)
-        else:
-            df1 = pd.DataFrame()
-    else:
-        df1 = pd.DataFrame()
-    return df1
-
-def calc_delai_livraison(deblocage, reception, RefFourCouleur):
-    """ le délai théorique entre la livraison et la réception est de 24h pour Logs
-        pondéré par la qté receptionnée    
-    """
-    if not deblocage.empty and not reception.empty:
-        # passer les réceptions en par ref fournisseur
-        reception_ref = pd.merge(reception, RefFourCouleur[["IDArticle", "ReferenceFournisseurCouleur"]], on="IDArticle", how="left")
-        
-#         # grouper par IDCommande/RefFourCouleur date première réception
-#         reception_ref = (reception_ref
-#                          .groupby(["IDCatalogue", "IDCommande", "ReferenceFournisseurCouleur"])
-#                          .agg({"DateReception": min}))
-        
-        # lier avec les déblocages
-        delai = pd.merge(deblocage, reception_ref, on=["IDCommande", "ReferenceFournisseurCouleur"], how="left")
-        
-        # calculer le delta entre le déblocage et la réception
-        delai["delai j"] = delai["DateReception"] - delai["DateDeblocage"] + pd.Timedelta(days=-1)
-        # supprimer les lignes où la date de réception est antérieure à la date de déblocage
-        delai = delai[delai["delai j"] > timedelta(days=0)]
-        
-        delai["delai*qte"] = delai["delai j"] * delai["QuantiteReceptionPiece"]/1000 # division par 1000 car sinon renvoi une erreur le chiffre est too big
-        
-        
-        # grouper par date de déblocage - aggreger par moyenne de délai
-        delai_g = delai.groupby("DateDeblocage", dropna=False).agg({"delai j":"mean", "QuantiteReceptionPiece": sum, "delai*qte":sum}).reset_index()
-        # calculer delai moyen pondéré
-        delai_g["delai pondere j"] = delai_g["delai*qte"] / delai_g["QuantiteReceptionPiece"] *1000
-        delai_g.drop(columns=["QuantiteReceptionPiece", "delai*qte"], inplace=True)
-        
-    
-    else:
-        delai_g = pd.DataFrame()
-    
-    return delai_g
-
 def calc_retard_livraisons(achat, reception, RefFourCouleur):
     
     if not reception.empty:
@@ -689,27 +456,256 @@ def set_glossaire():
     return pl.DataFrame(data)
 
 
-def warnings(deblocage):
+def get_warnings(deblocage):
     if not deblocage.empty:
         # doublons de déblocage
         doublons = deblocage[deblocage[[
             "IDCommande", "ReferenceFournisseurCouleur"
-        ]].duplicated()]
-        idcmd = doublons["IDCommande"]
-        ref = doublons["ReferenceFournisseurCouleur"]
-        df = (deblocage[(deblocage["IDCommande"].isin(idcmd)) & (deblocage["ReferenceFournisseurCouleur"].isin(ref))]
-              .sort_values(by=["IDCommande", "ReferenceFournisseurCouleur", "DateDeblocage"])
-             )
+        ]].duplicated()][["IDCommande", "ReferenceFournisseurCouleur"]]
+        df = pd.merge(deblocage, doublons, on=["IDCommande", "ReferenceFournisseurCouleur"], how="inner")
     else:
         df = pd.DataFrame()
 
     return df
 
 
-def save(marque, saison, parametrage, synthese, reception, recep, expedition,
+def groupby_ref_couleur_date(df, RefFourCouleur):
+    if not df.empty:
+        # ajouter la référence fournisseur couleur
+        if "ReferenceFournisseurCouleur" not in df.columns:
+            df = pd.merge(df, RefFourCouleur[["IDArticle", "ReferenceFournisseurCouleur"]], on="IDArticle", how="left")
+
+        # grouper par ref four couleur et date
+        col_gp = ["ReferenceFournisseurCouleur"] + [col for col in df.columns if col.startswith("Date")]
+        col_agg = [col for col in df.columns if (col.startswith("Quantite") and col.endswith("Piece")) or col.startswith("Montant")]
+
+        df = df.groupby(col_gp)[col_agg].sum().reset_index()
+    
+    return df
+
+
+def get_ref_date(achat_ref, deblocage_ref_date, reception_ref_date, expedition_ref_date):
+    """
+    renvoi un dataframe avec toutes les referencesfournisseurs couleurs possibles et toutes les dates de mouvement
+    """
+    
+    # récupération de toutes les réf couleur possibles pour les df non vides
+    ref_all = pd.concat([
+                        df["ReferenceFournisseurCouleur"]
+                        for df in [achat_ref, deblocage_ref_date, reception_ref_date, expedition_ref_date]
+                        if not df.empty
+                        ]).drop_duplicates()
+
+    RefFourCoul_all = pd.DataFrame({"ReferenceFournisseurCouleur":ref_all})
+
+    # récupération de toutes les dates de mouvement
+    DateMvt = pd.DataFrame()
+    for df in [deblocage_ref_date, reception_ref_date, expedition_ref_date]:
+        col = [col for col in df.columns if col.startswith("Date")]
+        date_mvt = df[col]
+        date_mvt = date_mvt.rename(columns = {col[0]: "Date"})
+        DateMvt = pd.concat([DateMvt, date_mvt]).drop_duplicates()
+
+    # produit cartésien pour avoir pour chaque ref une ligne pour chaque date
+    ref_date_mvt = pd.merge(RefFourCoul_all, DateMvt, how="cross").sort_values(by=["ReferenceFournisseurCouleur", "Date"])
+
+
+    return ref_date_mvt
+
+
+
+def merge_df_by_ref_four(deblocage_grouped, reception_grouped, expedition_grouped, ref_date_mvt):
+    """
+    renvoi les données des déblocages, expédition et / ou réception compilées
+    """
+    # savoir quels sont les df non vides
+    not_empty_df = [
+        df
+        for df in [deblocage_grouped, reception_grouped, expedition_grouped]
+        if not df.empty
+    ]
+
+    if len(not_empty_df) == 1:
+        df = not_empty_df[0]
+        # ajouter toutes les ref four couleur présentes dans les commandes d'achat
+        col_date = [col for col in df if col.startswith("Date")][0]
+        df = pd.merge(ref_date_mvt,
+                      df,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date],
+                      how="left")
+
+    elif len(not_empty_df) == 2:
+        # merge des 2 df sur les colonnes de date
+        df1 = not_empty_df[0]
+        df2 = not_empty_df[1]
+        col_date1 = [col for col in df1 if col.startswith("Date")][0]
+        col_date2 = [col for col in df2 if col.startswith("Date")][0]
+        # ajouter toutes les ref sur toutes les dates
+        df = pd.merge(ref_date_mvt,
+                      df1,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date1],
+                      how="left"
+                     )
+        df = pd.merge(df,
+                      df2,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date2],
+                      how="left")
+    elif len(not_empty_df) == 3:  # 3 dataframes à fusionner
+        df1 = not_empty_df[0]
+        df2 = not_empty_df[1]
+        df3 = not_empty_df[2]
+        col_date1 = [col for col in df1 if col.startswith("Date")][0]
+        col_date2 = [col for col in df2 if col.startswith("Date")][0]
+        col_date3 = [col for col in df3 if col.startswith("Date")][0]
+
+        df = pd.merge(ref_date_mvt,
+                      df1,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date1],
+                      how="left"
+                     )
+        df = pd.merge(df,
+                      df2,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date2],
+                      how="left")
+        df = pd.merge(df,
+                      df3,
+                      left_on=["ReferenceFournisseurCouleur", "Date"],
+                      right_on=["ReferenceFournisseurCouleur", col_date3],
+                      how="left")
+
+    else:
+        df = pd.DataFrame()
+
+    return df
+
+
+def cumsum_by_ref_date(df):
+    """
+    renvoi un tableau des données de déblocage, réception, expédition en date et les sommes cumulées
+    """
+    if not df.empty:
+        # grouper par date
+        # Colonne unique de date
+        # on n'a pas forcément les 3 colonnes de date, on peut en avoir que 2 (si c'est une centra sans déblocage)
+        # identifier les colonnes de date par leur nom
+        colonnes_dates = [col for col in df.columns if col.startswith("Date")]
+
+        # on rempli horizontalement (axis=1) avec la première date non vide (vers la gauche puis vers la droite)
+        # puis on prend la 1ère colonne
+        df["Date"] = df[colonnes_dates].bfill(axis=1).ffill(axis=1).iloc[:, 0]
+
+        # grouper par Date
+        other_col = [col for col in df.columns if not col.startswith("Date")]
+        other_col.remove("ReferenceFournisseurCouleur")
+        df1 = df.groupby(["ReferenceFournisseurCouleur", "Date"])[other_col].sum().reset_index()
+
+        # calculer les cumsum
+        df1 = calcul_cumsum_by_ref(df1)
+    else:
+        df1 = pd.DataFrame()
+
+    return df1
+
+
+def calcul_cumsum_by_ref(df):
+    # colonne non date
+    other_col = [col for col in df.columns if not col.startswith("Date") and not col.startswith("Reference")]
+    for col in other_col:
+        new_col = col + "_cum"
+        df[new_col] = df.groupby(["ReferenceFournisseurCouleur"])[col].cumsum()
+
+    return df
+
+
+def sum_by_ref_date_deblocage(df):
+    """
+    renvoi un tableau des données de déblocage, réception, expédition en date de déblocage
+    """
+    # quand il y a des NaN dans les dates de déblocages (=> il y a des réceptions ou expé mais pas de déblocage)
+    # alors on rempli les NaN avec la prochaine date de déblocage
+    # pour les réceptions/expéditions de fin de saison, il n'y a pas de déblocage à venir (car les déblocages sont finis)
+    # donc on met la date max entre la réception et l'expédition
+    if not df.empty:
+        # identifier les colonnes de date
+        col_date = [col for col in df.columns if col.startswith("Date")]
+
+        if "DateDeblocage" in df.columns:
+            if len(col_date) == 4:
+                max_dt = df["Date"].max() # permet de mettre une date pour les lorsque les déblocages sont finis
+                                        # et qu'il reste des réceptions expéditions à venir
+            df["DateDeblocage"] = df.groupby("ReferenceFournisseurCouleur")["DateDeblocage"].bfill()      
+
+            df["DateDeblocage"] = df["DateDeblocage"].fillna(max_dt)
+
+            col_non_date = [
+                col for col in df.columns if not col.startswith("Date") and not col.startswith("Reference")
+            ]
+            df1 = df.groupby(["ReferenceFournisseurCouleur", "DateDeblocage"])[col_non_date].sum().reset_index()
+
+            # récupérer les date déblocage
+            dt_debl = pd.DataFrame({"DateDeblocage":df["DateDeblocage"].drop_duplicates()})
+            # récupérer toutes les réf fournisseur
+            ref_debl = pd.DataFrame({"ReferenceFournisseurCouleur":df["ReferenceFournisseurCouleur"].drop_duplicates()})
+            # tableau de toutes les réf et toutes les dates de déblocage
+            ref_dt_debl = pd.merge(ref_debl, dt_debl, how="cross").sort_values(by=["ReferenceFournisseurCouleur", "DateDeblocage"])
+
+            df2 = pd.merge(ref_dt_debl, df1, on=["ReferenceFournisseurCouleur","DateDeblocage"], how="left")
+            df2 = df2.fillna(0)
+            # calculer les cumsum
+            df3 = calcul_cumsum_by_ref(df2)
+        else:
+            df3 = pd.DataFrame()
+    else:
+        df3 = pd.DataFrame()
+    return df3
+
+def calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur):
+    """ le délai théorique entre la livraison et la réception est de 24h pour Logs
+        pondéré par la qté receptionnée    
+    """
+    if not deblocage.empty and not reception.empty:
+        # passer les réceptions en par ref fournisseur
+        reception_ref = pd.merge(reception, RefFourCouleur[["IDArticle", "ReferenceFournisseurCouleur"]], on="IDArticle", how="left")
+        # puis grouper par ref four couleur
+        reception_ref = (reception_ref
+                         .groupby(["IDCommande", "ReferenceFournisseurCouleur", "DateReception"])[["QuantiteReceptionPiece", "MontantReception"]]
+                         .sum()
+                         .reset_index()
+                        )
+
+        delai = pd.merge(deblocage, reception_ref, on=["IDCommande", "ReferenceFournisseurCouleur"], how="left")
+        # supprimer les lignes ou la date de réception est antérieure à la date de déblocage
+        delai = delai[delai["DateReception"] > delai["DateDeblocage"]]
+        # calculer le delta entre le déblocage et la réception
+        delai["delai j"] = delai["DateReception"] - delai["DateDeblocage"] + pd.Timedelta(days=-1)
+        # supprimer les lignes où la date de réception est antérieure à la date de déblocage
+        delai = delai[delai["delai j"] > timedelta(days=0)]
+        
+        delai["delai*qte"] = delai["delai j"] * delai["QuantiteReceptionPiece"]/1000 # division par 1000 car sinon renvoi une erreur le chiffre est too big
+        
+        
+        # grouper par date de déblocage - aggreger par moyenne de délai
+        delai_g = delai.groupby(["ReferenceFournisseurCouleur","DateDeblocage"], dropna=False).agg({"delai j":"mean", "QuantiteReceptionPiece": sum, "delai*qte":sum}).reset_index()
+        # calculer delai moyen pondéré
+        delai_g["delai pondere j"] = delai_g["delai*qte"] / delai_g["QuantiteReceptionPiece"] *1000
+        delai_g.drop(columns=["QuantiteReceptionPiece", "delai*qte"], inplace=True)
+        
+    
+    else:
+        delai_g = pd.DataFrame()
+    
+    return delai_g
+
+
+def save_by_ref(marque, saison, parametrage, synthese, reception, recep, expedition,
          expe, achat, vente, deblocage, debl, data_by_date,
          data_by_date_deblocage, prix_achat, delai_livraison, warning, retard, annulation):
-    save_name = "_".join(["suivi", marque, saison]) + ".xlsx"
+    save_name = "_".join(["suivi_par_ref", marque, saison]) + ".xlsx"
     with Workbook(os.path.join(save_folder, save_name)) as wb:
         glossaire = set_glossaire()
         glossaire.write_excel(workbook=wb, worksheet="glossaire", autofit=True)
@@ -779,10 +775,12 @@ def save(marque, saison, parametrage, synthese, reception, recep, expedition,
     return
 
 
+###############################################################################
+
 def main():
     RefFourCouleur = ref_four_couleur()
-
-    for marque in param["Marque"].unique():#[0:1]:
+    
+    for marque in param["Marque"].unique():
         for saison in param[param["Marque"] == marque]["Saison"].unique(): # permet de recupérer les données sur plusieurs saisons
             parametrage = param[(param["Marque"] == marque) & (param["Saison"] == saison)]
             idcat = parametrage["IDCatalogue"].unique()
@@ -822,28 +820,38 @@ def main():
             # 6 - synthese
             synthese = calc_synthese(achat, reception, expedition, deblocage, annulation)
             
-            # Compilation des données des "3" df
-            deblocage_g, reception_g, expedition_g = aggregate_by_date(deblocage, reception, expedition)
-            data = merge_df(deblocage_g, reception_g, expedition_g)
+            # 7 - ajouter la ref fournisseur
+            achat_ref = groupby_ref_couleur_date(achat, RefFourCouleur) # pour pouvoir récupérer la liste des ref four couleur
+            deblocage_ref_date = groupby_ref_couleur_date(deblocage, RefFourCouleur)
+            reception_ref_date = groupby_ref_couleur_date(reception, RefFourCouleur)
+            expedition_ref_date = groupby_ref_couleur_date(expedition, RefFourCouleur)
             
-            # 7 - agrégation des données en date
-            data_by_date = sum_by_date(data)
-            ### CALCULER LES %###
+            # 8 - compiler les données des 3 df
+            # pour pouvoir faire des cumsum utilisables dans PowerBi en gardant le détail de la réf couleur,
+            # il va falloir une ligne pour chaque date et chaque ReferenceFournisseurCouleur
+            ref_date_mvt = get_ref_date(achat_ref, deblocage_ref_date, reception_ref_date, expedition_ref_date)
             
-            # 8 - agrégation par date de déblocage
-            data_by_date_deblocage = sum_by_date_deblocage(data)
+            data =  merge_df_by_ref_four(deblocage_ref_date, reception_ref_date, expedition_ref_date, ref_date_mvt)
             
-            # 9 - calucl des % cumulé vs qté & montant commandée dans M3
+            data_by_date = cumsum_by_ref_date(data)
+            
+            # 9 - compiler par date de déblocage
+            data_by_date_deblocage = sum_by_ref_date_deblocage(data)
+            
+            
+                            ### CALCULER LES %###
+                
+            # 10 - calucl des % cumulé vs qté & montant commandée dans M3
             data_by_date = calcul_pct_cum_df(data_by_date, qte_achat_tot, montant_achat_tot)
             data_by_date_deblocage = calcul_pct_cum_df(data_by_date_deblocage, qte_achat_tot, montant_achat_tot)
             
             # 10 - Calcul des % non cumulés vs qté & montant commandée dans M3
-            deblocage_g = calcul_pct_df(deblocage_g, qte_achat_tot, montant_achat_tot)
-            reception_g = calcul_pct_df(reception_g, qte_achat_tot, montant_achat_tot)
-            expedition_g = calcul_pct_df(expedition_g, qte_achat_tot, montant_achat_tot)
+            deblocage_ref_date = calcul_pct_df(deblocage_ref_date, qte_achat_tot, montant_achat_tot)
+            reception_ref_date = calcul_pct_df(reception_ref_date, qte_achat_tot, montant_achat_tot)
+            expedition_ref_date = calcul_pct_df(expedition_ref_date, qte_achat_tot, montant_achat_tot)
             
             # 11 - calcul du délai de livraison moyen
-            delai_livraison = calc_delai_livraison(deblocage, reception, RefFourCouleur)
+            delai_livraison = calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur)
             
             # 12 - calcul retard de livraison
             retard = calc_retard_livraisons(achat, reception,RefFourCouleur)
@@ -852,11 +860,11 @@ def main():
             reception, expedition = add_idcatalogue(reception, achat, expedition, vente)
             
             # alertes
-            alertes = warnings(deblocage)
+            alertes = get_warnings(deblocage)
             
             # Enregistrement en polars pour l'autoajustement des colonnes
-            save(marque, saison, parametrage, synthese ,reception , reception_g , expedition ,expedition_g ,
-                 achat, vente, deblocage ,deblocage_g , data_by_date, data_by_date_deblocage, prix_achat,
+            save_by_ref(marque, saison, parametrage, synthese ,reception , reception_ref_date , expedition ,expedition_ref_date ,
+                 achat_ref, vente, deblocage ,deblocage_ref_date , data_by_date, data_by_date_deblocage, prix_achat,
                  delai_livraison, alertes, retard, annulation
                 )
 
