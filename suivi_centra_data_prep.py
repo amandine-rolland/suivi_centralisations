@@ -501,10 +501,11 @@ def get_ref_date(achat_ref, deblocage_ref_date, reception_ref_date, expedition_r
     # récupération de toutes les dates de mouvement
     DateMvt = pd.DataFrame()
     for df in [deblocage_ref_date, reception_ref_date, expedition_ref_date]:
-        col = [col for col in df.columns if col.startswith("Date")]
-        date_mvt = df[col]
-        date_mvt = date_mvt.rename(columns = {col[0]: "Date"})
-        DateMvt = pd.concat([DateMvt, date_mvt]).drop_duplicates()
+        if not df.empty:    
+            col = [col for col in df.columns if col.startswith("Date")]
+            date_mvt = df[col]
+            date_mvt = date_mvt.rename(columns = {col[0]: "Date"})
+            DateMvt = pd.concat([DateMvt, date_mvt]).drop_duplicates()
 
     # produit cartésien pour avoir pour chaque ref une ligne pour chaque date
     ref_date_mvt = pd.merge(RefFourCoul_all, DateMvt, how="cross").sort_values(by=["ReferenceFournisseurCouleur", "Date"])
@@ -632,11 +633,10 @@ def sum_by_ref_date_deblocage(df):
     # donc on met la date max entre la réception et l'expédition
     if not df.empty:
         # identifier les colonnes de date
-        col_date = [col for col in df.columns if col.startswith("Date")]
+        #col_date = [col for col in df.columns if col.startswith("Date")]
 
         if "DateDeblocage" in df.columns:
-            if len(col_date) == 4:
-                max_dt = df["Date"].max() # permet de mettre une date pour les lorsque les déblocages sont finis
+            max_dt = df["Date"].max() # permet de mettre une date pour les lorsque les déblocages sont finis
                                         # et qu'il reste des réceptions expéditions à venir
             df["DateDeblocage"] = df.groupby("ReferenceFournisseurCouleur")["DateDeblocage"].bfill()      
 
@@ -664,6 +664,7 @@ def sum_by_ref_date_deblocage(df):
         df3 = pd.DataFrame()
     return df3
 
+
 def calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur):
     """ le délai théorique entre la livraison et la réception est de 24h pour Logs
         pondéré par la qté receptionnée    
@@ -685,19 +686,24 @@ def calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur):
         delai["delai j"] = delai["DateReception"] - delai["DateDeblocage"] + pd.Timedelta(days=-1)
         # supprimer les lignes où la date de réception est antérieure à la date de déblocage
         delai = delai[delai["delai j"] > timedelta(days=0)]
-        
-        delai["delai*qte"] = delai["delai j"] * delai["QuantiteReceptionPiece"]/1000 # division par 1000 car sinon renvoi une erreur le chiffre est too big
-        
-        
+
+        # convertir en secondes
+        delai["delai j"] = delai["delai j"].apply(lambda x : x.total_seconds())
+
+        delai["delai*qte"] = delai["delai j"] * delai["QuantiteReceptionPiece"] / (60*60*24) # division par (60*60*24) pour l'avoir en jours
+
+
         # grouper par date de déblocage - aggreger par moyenne de délai
         delai_g = delai.groupby(["ReferenceFournisseurCouleur","DateDeblocage"], dropna=False).agg({"delai j":"mean", "QuantiteReceptionPiece": sum, "delai*qte":sum}).reset_index()
         # calculer delai moyen pondéré
-        delai_g["delai pondere j"] = delai_g["delai*qte"] / delai_g["QuantiteReceptionPiece"] *1000
+        delai_g["delai pondere j"] = delai_g["delai*qte"] / delai_g["QuantiteReceptionPiece"]
         delai_g.drop(columns=["QuantiteReceptionPiece", "delai*qte"], inplace=True)
-        
+
     
     else:
         delai_g = pd.DataFrame()
+    
+    return delai_g
     
     return delai_g
 
