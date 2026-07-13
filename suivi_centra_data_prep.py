@@ -1,4 +1,5 @@
 import os
+import traceback
 import pandas as pd
 import polars as pl
 from xlsxwriter import Workbook
@@ -28,8 +29,7 @@ con = engine.connect()
 
 ## paramètres ##
 
-param = pd.read_excel(r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Supply Chain\data_prep\SuiviCentra\Parametres_centra_kpi.xlsx",
-                      sheet_name="IDCatalogue")
+
 
 save_folder = r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Supply Chain\data_prep\SuiviCentra"
 
@@ -37,8 +37,28 @@ save_folder = r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Supply Cha
 # ## fonctions ##################################################################
 
 
-def get_deblocage(marque, saison, prix_achat):
-    data = param[(param["Marque"] == marque) & (param["Saison"] == saison)].reset_index(drop=True)
+def get_deblocage(parametrage, marque, saison, prix_achat):
+    """
+    
+
+    Parameters
+    ----------
+    parametrage : TYPE
+        DESCRIPTION.fichier de paramatrage filtré sur la marque et la saison
+    marque : TYPE
+        DESCRIPTION.
+    saison : TYPE
+        DESCRIPTION.
+    prix_achat : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    df : TYPE
+        DESCRIPTION.
+
+    """
+    data = parametrage.copy()
     deblocage_folder = data["DossierSuiviDesDeblocages"].iloc[0]
     deblocage_file = data["Fichier"].iloc[0]
     deblocage_sheet = data["Onglet"].iloc[0]
@@ -46,7 +66,7 @@ def get_deblocage(marque, saison, prix_achat):
     #if not pd.isna(deblocage_folder) and not pd.isna(deblocage_file) and not pd.isna(deblocage_sheet):
     try:
         deblocage_path = os.path.join(deblocage_folder, deblocage_file)
-        print("fichier déblocage :",deblocage_path)
+        #print("fichier déblocage :",deblocage_path)
         df = pd.read_excel(deblocage_path, sheet_name=deblocage_sheet)
         
         # type des données
@@ -64,16 +84,16 @@ def get_deblocage(marque, saison, prix_achat):
     #else:
     except Exception:
         df = pd.DataFrame()
-        print("Nom de dossier, fichier et/ou onglet manquant.")
+        #print("Nom de dossier, fichier et/ou onglet manquant.")
             
     return df
 
 
 
-def get_annulations(marque, saison, prix_achat):
+def get_annulations(parametrage, marque, saison, prix_achat):
     """ quantité et montant annulés par la marque à ajouter au tableau de synthèse"""
     try :
-        data = param[(param["Marque"] == marque) & (param["Saison"] == saison)].reset_index(drop=True)
+        data = parametrage.copy()
         folder = data["DossierSuiviDesDeblocages"].iloc[0]
         file = data["Fichier"].iloc[0]
         sheet = data["OngletAnnulations"].iloc[0]
@@ -87,9 +107,9 @@ def get_annulations(marque, saison, prix_achat):
                      )
         df["MontantAnnulation"] = df["QuantiteAnnulationPiece"] * df["PrixAchatPiece"]
     
-    except Exception as e:
+    except Exception:
         df = pd.DataFrame()
-        print(e)
+        #print("il n'y a pas de fichier d'annulation")
     
     return df
 
@@ -237,8 +257,8 @@ def get_PrixAchat_RefFourCoul(achat, RefFourCouleur):
     px_achat_u = px_achat_u[["IDCommandeAchat", "ReferenceFournisseurCouleur", "PrixAchatPiece"]]
     
     # Y a t_il des doublons de prix d'achat à la refFourCouleur
-    print("Nombre de doublons de prix :",
-          px_achat_u[["ReferenceFournisseurCouleur", "PrixAchatPiece"]].drop_duplicates().duplicated().sum())
+    # print("Nombre de doublons de prix :",
+    #       px_achat_u[["ReferenceFournisseurCouleur", "PrixAchatPiece"]].drop_duplicates().duplicated().sum())
     
     return px_achat_u
 
@@ -692,7 +712,10 @@ def calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur):
 
         delai["delai*qte"] = delai["delai j"] * delai["QuantiteReceptionPiece"] / (60*60*24) # division par (60*60*24) pour l'avoir en jours
 
-
+        # repasser le delai en jours vs secondes
+        delai["delai j"] = delai["delai j"] / (60*60*24)
+        
+        
         # grouper par date de déblocage - aggreger par moyenne de délai
         delai_g = delai.groupby(["ReferenceFournisseurCouleur","DateDeblocage"], dropna=False).agg({"delai j":"mean", "QuantiteReceptionPiece": sum, "delai*qte":sum}).reset_index()
         # calculer delai moyen pondéré
@@ -704,8 +727,7 @@ def calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur):
         delai_g = pd.DataFrame()
     
     return delai_g
-    
-    return delai_g
+
 
 
 def save_by_ref(marque, saison, parametrage, synthese, reception, recep, expedition,
@@ -786,93 +808,108 @@ def save_by_ref(marque, saison, parametrage, synthese, reception, recep, expedit
 def main():
     RefFourCouleur = ref_four_couleur()
     
-    for marque in param["Marque"].unique():
-        for saison in param[param["Marque"] == marque]["Saison"].unique(): # permet de recupérer les données sur plusieurs saisons
-            parametrage = param[(param["Marque"] == marque) & (param["Saison"] == saison)]
-            idcat = parametrage["IDCatalogue"].unique()
-            print(marque, ":" ,idcat)
-    
-            idcat_sql = int_to_sql(idcat)
-    
-            # 1- réceptions
-            achat = get_achat(idcat_sql)
-    
-            idcmd_achat = get_idcmd_achat(achat)
-            idcmd_achat_sql = str_to_sql(idcmd_achat)
-    
-            reception = get_reception(idcmd_achat_sql)
+    try:
+        param = pd.read_excel(r"\\BUREAU2022\ACHATSChaussures\LOGISTIQUE\Rapports BDD Supply Chain\data_prep\SuiviCentra\Parametres_centra_kpi.xlsx",
+                              sheet_name="IDCatalogue")
+        
+        for marque in param["Marque"].unique():
+            for saison in param[param["Marque"] == marque]["Saison"].unique(): # permet de recupérer les données sur plusieurs saisons
+                try :
+                    parametrage = param[(param["Marque"] == marque) & (param["Saison"] == saison)].reset_index(drop=True)
+                    idcat = parametrage["IDCatalogue"].unique()
+
+                    #print(marque, ":" ,idcat)
             
-            # 2 - Prix d'achat par RefFour Coul - il faut l'enregistrer dans le fichier excel car besoin ensuite dans le PwBI
-            # et dans get_deblocage
-            prix_achat = get_PrixAchat_RefFourCoul(achat, RefFourCouleur)
-    
-            # 3 - expéditions    
-            vente = get_vente(idcat_sql)
-    
-            idcmd_vente = get_idcmd_vente(vente)
-            idcmd_vente_sql = str_to_sql(idcmd_vente)
-    
-            expedition = get_expedition(idcmd_vente_sql)
-    
-            # 4 - Totaux commandés pour le calucl des % vs qté & montant commandée dans M3
-            qte_achat_tot = achat["QuantiteCommandeePiece"].sum()
-            montant_achat_tot = achat["MontantAchat"].sum()
-    
+                    idcat_sql = int_to_sql(idcat)
             
-            # 5 - déblocages et annulations
-            deblocage = get_deblocage(marque, saison, prix_achat)
-            annulation = get_annulations(marque, saison, prix_achat)
-          
-            # 6 - synthese
-            synthese = calc_synthese(achat, reception, expedition, deblocage, annulation)
+                    # 1- réceptions
+                    achat = get_achat(idcat_sql)
             
-            # 7 - ajouter la ref fournisseur
-            achat_ref = groupby_ref_couleur_date(achat, RefFourCouleur) # pour pouvoir récupérer la liste des ref four couleur
-            deblocage_ref_date = groupby_ref_couleur_date(deblocage, RefFourCouleur)
-            reception_ref_date = groupby_ref_couleur_date(reception, RefFourCouleur)
-            expedition_ref_date = groupby_ref_couleur_date(expedition, RefFourCouleur)
+                    idcmd_achat = get_idcmd_achat(achat)
+                    idcmd_achat_sql = str_to_sql(idcmd_achat)
             
-            # 8 - compiler les données des 3 df
-            # pour pouvoir faire des cumsum utilisables dans PowerBi en gardant le détail de la réf couleur,
-            # il va falloir une ligne pour chaque date et chaque ReferenceFournisseurCouleur
-            ref_date_mvt = get_ref_date(achat_ref, deblocage_ref_date, reception_ref_date, expedition_ref_date)
+                    reception = get_reception(idcmd_achat_sql)
+                    
+                    # 2 - Prix d'achat par RefFour Coul - il faut l'enregistrer dans le fichier excel car besoin ensuite dans le PwBI
+                    # et dans get_deblocage
+                    prix_achat = get_PrixAchat_RefFourCoul(achat, RefFourCouleur)
             
-            data =  merge_df_by_ref_four(deblocage_ref_date, reception_ref_date, expedition_ref_date, ref_date_mvt)
+                    # 3 - expéditions    
+                    vente = get_vente(idcat_sql)
             
-            data_by_date = cumsum_by_ref_date(data)
+                    idcmd_vente = get_idcmd_vente(vente)
+                    idcmd_vente_sql = str_to_sql(idcmd_vente)
             
-            # 9 - compiler par date de déblocage
-            data_by_date_deblocage = sum_by_ref_date_deblocage(data)
+                    expedition = get_expedition(idcmd_vente_sql)
             
+                    # 4 - Totaux commandés pour le calucl des % vs qté & montant commandée dans M3
+                    qte_achat_tot = achat["QuantiteCommandeePiece"].sum()
+                    montant_achat_tot = achat["MontantAchat"].sum()
             
-                            ### CALCULER LES %###
-                
-            # 10 - calucl des % cumulé vs qté & montant commandée dans M3
-            data_by_date = calcul_pct_cum_df(data_by_date, qte_achat_tot, montant_achat_tot)
-            data_by_date_deblocage = calcul_pct_cum_df(data_by_date_deblocage, qte_achat_tot, montant_achat_tot)
-            
-            # 10 - Calcul des % non cumulés vs qté & montant commandée dans M3
-            deblocage_ref_date = calcul_pct_df(deblocage_ref_date, qte_achat_tot, montant_achat_tot)
-            reception_ref_date = calcul_pct_df(reception_ref_date, qte_achat_tot, montant_achat_tot)
-            expedition_ref_date = calcul_pct_df(expedition_ref_date, qte_achat_tot, montant_achat_tot)
-            
-            # 11 - calcul du délai de livraison moyen
-            delai_livraison = calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur)
-            
-            # 12 - calcul retard de livraison
-            retard = calc_retard_livraisons(achat, reception,RefFourCouleur)
+                    
+                    # 5 - déblocages et annulations
+                    deblocage = get_deblocage(parametrage, marque, saison, prix_achat)
+                    annulation = get_annulations(parametrage, marque, saison, prix_achat)
+                  
+                    # 6 - synthese
+                    synthese = calc_synthese(achat, reception, expedition, deblocage, annulation)
+                    
+                    # 7 - ajouter la ref fournisseur
+                    achat_ref = groupby_ref_couleur_date(achat, RefFourCouleur) # pour pouvoir récupérer la liste des ref four couleur
+                    deblocage_ref_date = groupby_ref_couleur_date(deblocage, RefFourCouleur)
+                    reception_ref_date = groupby_ref_couleur_date(reception, RefFourCouleur)
+                    expedition_ref_date = groupby_ref_couleur_date(expedition, RefFourCouleur)
+                    
+                    # 8 - compiler les données des 3 df
+                    # pour pouvoir faire des cumsum utilisables dans PowerBi en gardant le détail de la réf couleur,
+                    # il va falloir une ligne pour chaque date et chaque ReferenceFournisseurCouleur
+                    ref_date_mvt = get_ref_date(achat_ref, deblocage_ref_date, reception_ref_date, expedition_ref_date)
+                    
+                    data =  merge_df_by_ref_four(deblocage_ref_date, reception_ref_date, expedition_ref_date, ref_date_mvt)
+                    
+                    data_by_date = cumsum_by_ref_date(data)
+                    
+                    # 9 - compiler par date de déblocage
+                    data_by_date_deblocage = sum_by_ref_date_deblocage(data)
+                    
+                    
+                                    ### CALCULER LES %###
                         
-            # ajout des IDCatalogue à réception et expédition
-            reception, expedition = add_idcatalogue(reception, achat, expedition, vente)
-            
-            # alertes
-            alertes = get_warnings(deblocage)
-            
-            # Enregistrement en polars pour l'autoajustement des colonnes
-            save_by_ref(marque, saison, parametrage, synthese ,reception , reception_ref_date , expedition ,expedition_ref_date ,
-                 achat_ref, vente, deblocage ,deblocage_ref_date , data_by_date, data_by_date_deblocage, prix_achat,
-                 delai_livraison, alertes, retard, annulation
-                )
+                    # 10 - calucl des % cumulé vs qté & montant commandée dans M3
+                    data_by_date = calcul_pct_cum_df(data_by_date, qte_achat_tot, montant_achat_tot)
+                    data_by_date_deblocage = calcul_pct_cum_df(data_by_date_deblocage, qte_achat_tot, montant_achat_tot)
+                    
+                    # 10 - Calcul des % non cumulés vs qté & montant commandée dans M3
+                    deblocage_ref_date = calcul_pct_df(deblocage_ref_date, qte_achat_tot, montant_achat_tot)
+                    reception_ref_date = calcul_pct_df(reception_ref_date, qte_achat_tot, montant_achat_tot)
+                    expedition_ref_date = calcul_pct_df(expedition_ref_date, qte_achat_tot, montant_achat_tot)
+                    
+                    # 11 - calcul du délai de livraison moyen
+                    delai_livraison = calc_delai_livraison_by_ref(deblocage, reception, RefFourCouleur)
+                    
+                    # 12 - calcul retard de livraison
+                    retard = calc_retard_livraisons(achat, reception,RefFourCouleur)
+                                
+                    # ajout des IDCatalogue à réception et expédition
+                    reception, expedition = add_idcatalogue(reception, achat, expedition, vente)
+                    
+                    # alertes
+                    alertes = get_warnings(deblocage)
+                    
+                    #Enregistrement en polars pour l'autoajustement des colonnes
+                    save_by_ref(marque, saison, parametrage, synthese ,reception , reception_ref_date , expedition ,expedition_ref_date ,
+                         achat_ref, vente, deblocage ,deblocage_ref_date , data_by_date, data_by_date_deblocage, prix_achat,
+                         delai_livraison, alertes, retard, annulation
+                        )
+                except Exception:
+                    print(f"erreur lors de l'exécution pour {marque} {saison}")
+                    traceback.print_exc()
+  
+    except Exception:
+        print("erreur avec le fichier de paramétrage")
+        traceback.print_exc()
+    
+    
 
 
 if __name__ == "__main__":
